@@ -1,4 +1,4 @@
-package main
+package twmd
 
 import (
 	"context"
@@ -33,7 +33,6 @@ var (
 	vidz    bool
 	imgs    bool
 	urlOnly bool
-	version = "1.13.3"
 	scraper *twitterscraper.Scraper
 	client  *http.Client
 	size    = "orig"
@@ -399,7 +398,7 @@ func getFormat(tweet interface{}) string {
 
 }
 
-func main() {
+func main2() {
 	var nbr, single, output string
 	var retweet, all, printversion, nologo, login, loginp, twofa bool
 	op := optionparser.NewOptionParser()
