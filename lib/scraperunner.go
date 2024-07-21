@@ -2,15 +2,10 @@ package lib
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"net/http"
-	"os"
 	"sync"
 
 	twitterscraper "github.com/imperatrona/twitter-scraper"
-	"golang.org/x/term"
 )
 
 /*
@@ -44,7 +39,8 @@ func NewScraper(config *Config, httpClient HTTPClient) *ScrapeRunner {
 func (s *ScrapeRunner) Run() error {
 
 	if s.cfg.Login != "" || s.cfg.Loginp != "" {
-		if err := s.login(); err != nil {
+		auth := NewAuthenticator(s.scraper, s.cfg)
+		if err := auth.Login(); err != nil {
 			return err
 		}
 	}
@@ -103,77 +99,6 @@ func (s *ScrapeRunner) DownloadTweet(tweet *twitterscraper.Tweet) error {
 		if err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func (s *ScrapeRunner) login() error {
-	if _, err := os.Stat("twmd_cookies.json"); errors.Is(err, os.ErrNotExist) {
-		return s.askPass()
-	}
-
-	f, err := os.Open("twmd_cookies.json")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	var cookies []*http.Cookie
-	if err := json.NewDecoder(f).Decode(&cookies); err != nil {
-		return err
-	}
-
-	s.scraper.SetCookies(cookies)
-
-	if !s.scraper.IsLoggedIn() {
-		return s.askPass()
-	}
-
-	fmt.Println("Logged in")
-	return nil
-}
-
-func (s *ScrapeRunner) askPass() error {
-	for {
-		var username, pass string
-		fmt.Print("username: ")
-		fmt.Scanln(&username)
-		fmt.Print("password: ")
-		if s.cfg.Loginp != "" {
-			fmt.Scanln(&pass)
-		} else {
-			password, _ := term.ReadPassword(int(os.Stdin.Fd()))
-			fmt.Println()
-			pass = string(password)
-		}
-
-		var code string
-		if s.cfg.Twofa {
-			fmt.Print("two-factor: ")
-			fmt.Scanln(&code)
-			fmt.Println()
-		}
-
-		if err := s.scraper.Login(username, pass, code); err != nil {
-			return err
-		}
-
-		if !s.scraper.IsLoggedIn() {
-			fmt.Println("Bad user/pass")
-			continue
-		}
-
-		cookies := s.scraper.GetCookies()
-		js, _ := json.Marshal(cookies)
-		f, err := os.OpenFile("twmd_cookies.json", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		if _, err := f.Write(js); err != nil {
-			return err
-		}
-		break
 	}
 	return nil
 }
