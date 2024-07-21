@@ -58,48 +58,77 @@ func (d *Downloader) downloadPhotos(tweet *twitterscraper.Tweet) error {
 	return nil
 }
 
-func (d *Downloader) download(tweet *twitterscraper.Tweet, url, fileType, output, dwnType string) {
+func (d *Downloader) download(tweet *twitterscraper.Tweet, url, fileType, output, dwnType string) error {
+	name := d.generateFileName(tweet, url)
+
+	if d.config.UrlOnly {
+		fmt.Println(url)
+		return nil
+	}
+
+	resp, err := d.makeRequest(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	filePath, err := d.determineFilePath(output, fileType, name, dwnType)
+	if err != nil {
+		return err
+	}
+
+	if err := d.saveFile(filePath, resp.Body); err != nil {
+		return err
+	}
+
+	fmt.Println("Downloaded " + name)
+	return nil
+}
+
+func (d *Downloader) generateFileName(tweet *twitterscraper.Tweet, url string) string {
 	segments := strings.Split(url, "/")
 	name := segments[len(segments)-1]
+
 	re := regexp.MustCompile(`name=`)
 	if re.MatchString(name) {
 		segments = strings.Split(name, "?")
 		name = segments[len(segments)-2]
 	}
+
 	if d.config.Format != "" {
 		nameFormat, _ := FormatFileName(tweet, d.config.Format, d.config.Datefmt)
 		name = nameFormat + "_" + name
 	}
-	if d.config.UrlOnly {
-		fmt.Println(url)
-		return
-	}
 
+	return name
+}
+
+func (d *Downloader) makeRequest(url string) (*http.Response, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		fmt.Println("Error creating request:", err)
-		return
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 	req.Header.Add("User-Agent", "Mozilla/5.0 (X11; Linux x86_64)")
+
 	resp, err := d.httpClient.Do(req)
 	if err != nil {
-		fmt.Println("Error downloading:", err)
-		return
+		return nil, fmt.Errorf("error downloading: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		fmt.Println("Error: status code", resp.StatusCode)
-		return
+		return nil, fmt.Errorf("error: status code %d", resp.StatusCode)
 	}
 
+	return resp, nil
+}
+
+func (d *Downloader) determineFilePath(output, fileType, name, dwnType string) (string, error) {
 	var filePath string
 	if dwnType == "user" {
 		filePath = filepath.Join(output, fileType, name)
 		if d.config.Update {
 			if _, err := os.Stat(filePath); !os.IsNotExist(err) {
-				fmt.Println(name + ": already exists")
-				return
+				return "", fmt.Errorf("%s: already exists", name)
 			}
 		}
 		if fileType == "rtimg" || fileType == "rtvideo" {
@@ -109,29 +138,27 @@ func (d *Downloader) download(tweet *twitterscraper.Tweet, url, fileType, output
 		filePath = filepath.Join(output, name)
 		if d.config.Update {
 			if _, err := os.Stat(filePath); !os.IsNotExist(err) {
-				fmt.Println("File exists")
-				return
+				return "", fmt.Errorf("file exists")
 			}
 		}
 	}
+	return filePath, nil
+}
 
+func (d *Downloader) saveFile(filePath string, content io.Reader) error {
 	if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
-		fmt.Println("Error creating directory:", err)
-		return
+		return fmt.Errorf("error creating directory: %w", err)
 	}
 
 	f, err := os.Create(filePath)
 	if err != nil {
-		fmt.Println("Error creating file:", err)
-		return
+		return fmt.Errorf("error creating file: %w", err)
 	}
 	defer f.Close()
 
-	_, err = io.Copy(f, resp.Body)
-	if err != nil {
-		fmt.Println("Error writing file:", err)
-		return
+	if _, err = io.Copy(f, content); err != nil {
+		return fmt.Errorf("error writing file: %w", err)
 	}
 
-	fmt.Println("Downloaded " + name)
+	return nil
 }
